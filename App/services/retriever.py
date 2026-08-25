@@ -1,7 +1,6 @@
 import re
 from services.embeddings import generate_query_embedding
 from services.vectordb import search_embeddings
-from services.retrieval_strategy import get_top_k
 from services.context_filter import remove_duplicate_chunks
 
 
@@ -14,7 +13,7 @@ def retrieve_context(question: str, filename: str = None, question_type: str = "
     # ------------------------------------
     # Decide Retrieval Strategy
     # ------------------------------------
-    top_k = max(get_top_k(question_type), 8)
+    top_k = 8
 
     print("\n========== RETRIEVAL ==========")
     print(f"Question Type : {question_type}")

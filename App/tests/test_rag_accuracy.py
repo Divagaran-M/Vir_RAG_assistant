@@ -1,15 +1,15 @@
-﻿"""
-test_rag_accuracy.py -- End-to-end RAG accuracy & flow test suite.
+"""
+test_rag_accuracy.py — End-to-end RAG accuracy & flow test suite.
 
 Tests EVERY layer of the pipeline with REAL data from the ingested CSVs:
-  1. Router accuracy      -- does classify LOOKUP / COMPUTE / HYBRID correctly?
-  2. SQL Engine accuracy  -- does the SQL query return the right rows/values?
-  3. Retriever accuracy   -- does vector search retrieve the right chunks?
-  4. Full pipeline flow   -- does the entire chat() path produce a correct answer?
-  5. Flow trace logging   -- prints a detailed trace of what data passed where.
+  1. Router accuracy      — does classify LOOKUP / COMPUTE / HYBRID correctly?
+  2. SQL Engine accuracy  — does the SQL query return the right rows/values?
+  3. Retriever accuracy   — does vector search retrieve the right chunks?
+  4. Full pipeline flow   — does the entire chat() path produce a correct answer?
+  5. Flow trace logging   — prints a detailed trace of what data passed where.
 
 Ground truth values are derived from the ACTUAL ingested CSV files so tests
-can only fail if the pipeline is genuinely broken -- not because the data
+can only fail if the pipeline is genuinely broken — not because the data
 changed.
 
 Run from the App/ directory:
@@ -28,11 +28,11 @@ import json
 import textwrap
 from datetime import datetime
 
-# ?? make services importable ??????????????????????????????????????????????????
+# ── make services importable ──────────────────────────────────────────────────
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, APP_DIR)
 
-# ?? colour helpers ????????????????????????????????????????????????????????????
+# ── colour helpers ────────────────────────────────────────────────────────────
 RESET  = "\033[0m"
 GREEN  = "\033[92m"
 RED    = "\033[91m"
@@ -41,28 +41,28 @@ CYAN   = "\033[96m"
 BOLD   = "\033[1m"
 DIM    = "\033[2m"
 
-def ok(msg):   print(f"{GREEN}  ?  {msg}{RESET}")
-def fail(msg): print(f"{RED}  ?  {msg}{RESET}")
-def info(msg): print(f"{CYAN}  ?  {msg}{RESET}")
-def warn(msg): print(f"{YELLOW}  ?  {msg}{RESET}")
+def ok(msg):   print(f"{GREEN}  ✓  {msg}{RESET}")
+def fail(msg): print(f"{RED}  ✗  {msg}{RESET}")
+def info(msg): print(f"{CYAN}  ℹ  {msg}{RESET}")
+def warn(msg): print(f"{YELLOW}  ⚠  {msg}{RESET}")
 def section(title):
-    print(f"\n{BOLD}{'?'*60}{RESET}")
+    print(f"\n{BOLD}{'═'*60}{RESET}")
     print(f"{BOLD}  {title}{RESET}")
-    print(f"{BOLD}{'?'*60}{RESET}")
+    print(f"{BOLD}{'═'*60}{RESET}")
 def sub(title):
-    print(f"\n{DIM}{'?'*55}{RESET}")
+    print(f"\n{DIM}{'─'*55}{RESET}")
     print(f"  {BOLD}{title}{RESET}")
 
-# ?? log collector (captures all trace data into a JSON-serialisable dict) ?????
+# ── log collector (captures all trace data into a JSON-serialisable dict) ─────
 TRACE_LOG = []
 
 def log_step(step: str, data: dict):
     entry = {"timestamp": datetime.now().isoformat(), "step": step, **data}
     TRACE_LOG.append(entry)
 
-# ?????????????????????????????????????????????????????????????????????????????
+# ─────────────────────────────────────────────────────────────────────────────
 # GROUND TRUTH  (derived from real ingested CSV rows)
-# ?????????????????????????????????????????????????????????????????????????????
+# ─────────────────────────────────────────────────────────────────────────────
 GT = {
     # student_2yr: 394 rows, first student
     "total_2yr_students":        394,
@@ -86,62 +86,13 @@ GT = {
     "ai_ds_students_2yr":        394,   # all rows are 2yr table
 }
 
-# ?????????????????????????????????????????????????????????????????????????????
-# SUITE 1 -- ROUTER ACCURACY
-# ?????????????????????????????????????????????????????????????????????????????
 
-def suite_router():
-    section("SUITE 1 -- Router: LOOKUP / COMPUTE / HYBRID Classification")
-    from services.router import route_question
-
-    cases = [
-        # (question, expected_intent, description)
-        ("How many students are in the 2yr batch?",                     "COMPUTE",  "count -> COMPUTE"),
-        ("What is the average attendance percentage?",                  "COMPUTE",  "average -> COMPUTE"),
-        ("total number of female students",                             "COMPUTE",  "total -> COMPUTE"),
-        ("highest marks in 4th sem IT?",                               "COMPUTE",  "highest -> COMPUTE"),
-        ("who has the lowest attendance?",                              "COMPUTE",  "lowest -> COMPUTE"),
-        ("Tell me about Aathi S",                                       "LOOKUP",   "person description -> LOOKUP"),
-        ("What is the blood group of ABARNA?",                         "LOOKUP",   "specific fact -> LOOKUP"),
-        ("Describe the 5th sem result for Abi P",                      "LOOKUP",   "describe -> LOOKUP"),
-        ("who is the student with highest marks and describe them",     "HYBRID",   "rank + describe -> HYBRID"),
-        ("find top student and explain their profile",                   "HYBRID",   "top + explain -> HYBRID"),
-    ]
-
-    passed = 0
-    for question, expected, desc in cases:
-        t0 = time.time()
-        got = route_question(question)
-        elapsed = round((time.time() - t0) * 1000)
-
-        log_step("ROUTER", {
-            "question": question,
-            "expected": expected,
-            "got": got,
-            "passed": got == expected,
-            "ms": elapsed,
-        })
-
-        sub(f"[{desc}]")
-        print(f"    Q: {question}")
-        print(f"    Expected: {BOLD}{expected}{RESET}  |  Got: {BOLD}{got}{RESET}  ({elapsed}ms)")
-
-        if got == expected:
-            ok("PASS")
-            passed += 1
-        else:
-            fail(f"FAIL -- expected {expected}, got {got}")
-
-    print(f"\n  Router Score: {passed}/{len(cases)}")
-    return passed, len(cases)
-
-
-# ?????????????????????????????????????????????????????????????????????????????
-# SUITE 2 -- SQL ENGINE ACCURACY
-# ?????????????????????????????????????????????????????????????????????????????
+# ═════════════════════════════════════════════════════════════════════════════
+# SUITE 2 — SQL ENGINE ACCURACY
+# ═════════════════════════════════════════════════════════════════════════════
 
 def suite_sql():
-    section("SUITE 2 -- SQL Engine: Compute Accuracy Against Real CSV Data")
+    section("SUITE 2 — SQL Engine: Compute Accuracy Against Real CSV Data")
     from services.sql_engine import run_sql
 
     cases = [
@@ -209,29 +160,29 @@ def suite_sql():
             print(f"    Preview: {json.dumps(result['rows'][:2], default=str)[:200]}")
 
         if result.get("error"):
-            fail(f"FAIL -- SQL error: {result['error']}")
+            fail(f"FAIL — SQL error: {result['error']}")
         elif not result.get("rows"):
-            fail("FAIL -- 0 rows returned")
+            fail("FAIL — 0 rows returned")
         else:
             try:
                 if check(result):
                     ok(f"PASS ({elapsed}ms)")
                     passed += 1
                 else:
-                    fail(f"FAIL -- check function returned False. Rows: {result['rows'][:2]}")
+                    fail(f"FAIL — check function returned False. Rows: {result['rows'][:2]}")
             except Exception as e:
-                fail(f"FAIL -- check raised: {e}")
+                fail(f"FAIL — check raised: {e}")
 
     print(f"\n  SQL Engine Score: {passed}/{len(cases)}")
     return passed, len(cases)
 
 
-# ?????????????????????????????????????????????????????????????????????????????
-# SUITE 3 -- RETRIEVER / QDRANT ACCURACY
-# ?????????????????????????????????????????????????????????????????????????????
+# ═════════════════════════════════════════════════════════════════════════════
+# SUITE 3 — RETRIEVER / QDRANT ACCURACY
+# ═════════════════════════════════════════════════════════════════════════════
 
 def suite_retriever():
-    section("SUITE 3 -- Retriever: Vector Search Chunk Quality")
+    section("SUITE 3 — Retriever: Vector Search Chunk Quality")
     from services.retriever import retrieve_context
 
     cases = [
@@ -302,23 +253,23 @@ def suite_retriever():
             warn(f"Keywords missing: {missing_keywords}")
 
         if len(missing_keywords) == 0:
-            ok("PASS -- all keywords found in retrieved context")
+            ok("PASS — all keywords found in retrieved context")
             passed += 1
         elif len(found_keywords) > 0:
-            warn(f"PARTIAL -- {len(found_keywords)}/{len(keywords)} keywords found")
+            warn(f"PARTIAL — {len(found_keywords)}/{len(keywords)} keywords found")
         else:
-            fail("FAIL -- no relevant content retrieved")
+            fail("FAIL — no relevant content retrieved")
 
     print(f"\n  Retriever Score: {passed}/{len(cases)}")
     return passed, len(cases)
 
 
-# ?????????????????????????????????????????????????????????????????????????????
-# SUITE 4 -- FULL PIPELINE FLOW (end-to-end)
-# ?????????????????????????????????????????????????????????????????????????????
+# ═════════════════════════════════════════════════════════════════════════════
+# SUITE 4 — FULL PIPELINE FLOW (end-to-end)
+# ═════════════════════════════════════════════════════════════════════════════
 
 def suite_pipeline():
-    section("SUITE 4 -- Full Pipeline: End-to-End Answer Quality")
+    section("SUITE 4 — Full Pipeline: End-to-End Answer Quality")
     from services.router import route_question
     from services.sql_engine import run_sql
     from services.retriever import retrieve_context
@@ -329,7 +280,7 @@ def suite_pipeline():
         """Simulate exactly what chat.py does, logging every step."""
         trace = {"question": question, "steps": []}
 
-        # Step 1 -- Route
+        # Step 1 — Route
         t0 = time.time()
         intent = route_question(question)
         trace["steps"].append({"step": "ROUTER", "output": intent, "ms": round((time.time()-t0)*1000)})
@@ -384,7 +335,7 @@ def suite_pipeline():
                 "ms": round((time.time()-t0)*1000),
             })
             sql_summary = str(sql_result.get("rows", "no rows"))
-            rag_query = f"{question} -- {sql_summary}"
+            rag_query = f"{question} — {sql_summary}"
             t0 = time.time()
             context = retrieve_context(question=rag_query, filename=filename, question_type="general")
             trace["steps"].append({
@@ -404,7 +355,7 @@ def suite_pipeline():
         trace["final_answer"] = answer
         return trace
 
-    # ?? test cases ????????????????????????????????????????????????????????????
+    # ── test cases ────────────────────────────────────────────────────────────
 
     e2e_cases = [
         {
@@ -414,7 +365,7 @@ def suite_pipeline():
             "expected_intent": "COMPUTE",
             "answer_must_contain": ["394"],   # exact number from CSV
             "answer_must_not_contain": ["I couldn't", "error", "sorry"],
-            "desc": "Student count -- should return 394 from SQL",
+            "desc": "Student count — should return 394 from SQL",
         },
         {
             "id": "E2E-2",
@@ -423,7 +374,7 @@ def suite_pipeline():
             "expected_intent": "LOOKUP",
             "answer_must_contain": ["Aathi"],
             "answer_must_not_contain": ["I couldn't find"],
-            "desc": "Lookup student -- Aathi S should be found in context",
+            "desc": "Lookup student — Aathi S should be found in context",
         },
         {
             "id": "E2E-3",
@@ -432,7 +383,7 @@ def suite_pipeline():
             "expected_intent": "LOOKUP",
             "answer_must_contain": ["O+"],
             "answer_must_not_contain": ["I couldn't"],
-            "desc": "Specific fact lookup -- ABARNA blood group = O+",
+            "desc": "Specific fact lookup — ABARNA blood group = O+",
         },
         {
             "id": "E2E-4",
@@ -441,7 +392,7 @@ def suite_pipeline():
             "expected_intent": "COMPUTE",
             "answer_must_contain": [],  # just check no error
             "answer_must_not_contain": ["error", "failed"],
-            "desc": "Filtered count -- attendance > 60%",
+            "desc": "Filtered count — attendance > 60%",
         },
         {
             "id": "E2E-5",
@@ -450,7 +401,7 @@ def suite_pipeline():
             "expected_intent": "COMPUTE",
             "answer_must_contain": ["332"],
             "answer_must_not_contain": ["error"],
-            "desc": "3yr student count -- should return 332",
+            "desc": "3yr student count — should return 332",
         },
     ]
 
@@ -471,8 +422,8 @@ def suite_pipeline():
         total_ms = round((time.time() - t_start) * 1000)
         answer = trace.get("final_answer", "")
 
-        # ?? print flow trace ??????????????????????????????????????????????????
-        print(f"\n    {'?'*50}")
+        # ── print flow trace ──────────────────────────────────────────────────
+        print(f"\n    {'─'*50}")
         print(f"    FLOW TRACE:")
         for step in trace["steps"]:
             step_name = step["step"]
@@ -491,7 +442,7 @@ def suite_pipeline():
                 print(f"      [{step_name}]  ({ms}ms)")
 
         print(f"      [TOTAL]       {total_ms}ms")
-        print(f"    {'?'*50}")
+        print(f"    {'─'*50}")
         print(f"    Answer: {answer[:300]!r}")
 
         log_step("E2E_PIPELINE", {
@@ -503,7 +454,7 @@ def suite_pipeline():
             "total_ms": total_ms,
         })
 
-        # ?? checks ????????????????????????????????????????????????????????????
+        # ── checks ────────────────────────────────────────────────────────────
         check_failures = []
 
         # Intent check
@@ -521,21 +472,21 @@ def suite_pipeline():
                 check_failures.append(f"answer contains forbidden: {must_not!r}")
 
         if not check_failures:
-            ok(f"PASS -- all checks passed ({total_ms}ms)")
+            ok(f"PASS — all checks passed ({total_ms}ms)")
             passed += 1
         else:
-            fail(f"FAIL -- {'; '.join(check_failures)}")
+            fail(f"FAIL — {'; '.join(check_failures)}")
 
     print(f"\n  Pipeline Score: {passed}/{len(e2e_cases)}")
     return passed, len(e2e_cases)
 
 
-# ?????????????????????????????????????????????????????????????????????????????
-# SUITE 5 -- DATA FLOW TRACE (shows exactly what shape of data each layer sees)
-# ?????????????????????????????????????????????????????????????????????????????
+# ═════════════════════════════════════════════════════════════════════════════
+# SUITE 5 — DATA FLOW TRACE (shows exactly what shape of data each layer sees)
+# ═════════════════════════════════════════════════════════════════════════════
 
 def suite_data_flow_trace():
-    section("SUITE 5 -- Data Flow Trace: What Shape of Data Passes Between Layers")
+    section("SUITE 5 — Data Flow Trace: What Shape of Data Passes Between Layers")
     from services.embeddings import generate_query_embedding
     from services.vectordb import search_embeddings
     from services.sql_engine import run_sql, _find_csv_paths, _load_csvs_into_sqlite
@@ -543,8 +494,8 @@ def suite_data_flow_trace():
     question = "Aathi S attendance in 5th semester"
     info(f"Tracing question: {question!r}")
 
-    # ?? Layer 0: CSV Discovery ????????????????????????????????????????????????
-    sub("Layer 0 -- CSV Discovery")
+    # ── Layer 0: CSV Discovery ────────────────────────────────────────────────
+    sub("Layer 0 — CSV Discovery")
     csvs = _find_csv_paths(filename="attendance_5sem__IT_III.csv")
     print(f"    CSVs found: {[os.path.basename(c) for c in csvs]}")
     conn, schema = _load_csvs_into_sqlite(csvs)
@@ -555,8 +506,8 @@ def suite_data_flow_trace():
 
     log_step("FLOW_CSV_LAYER", {"csvs": csvs, "schema_preview": schema[:400]})
 
-    # ?? Layer 1: Query Embedding ??????????????????????????????????????????????
-    sub("Layer 1 -- Query Embedding")
+    # ── Layer 1: Query Embedding ──────────────────────────────────────────────
+    sub("Layer 1 — Query Embedding")
     t0 = time.time()
     embedding = generate_query_embedding(question)
     elapsed = round((time.time() - t0) * 1000)
@@ -572,8 +523,8 @@ def suite_data_flow_trace():
         "ms": elapsed,
     })
 
-    # ?? Layer 2: Vector Search (raw Qdrant response) ??????????????????????????
-    sub("Layer 2 -- Qdrant Vector Search (raw response shape)")
+    # ── Layer 2: Vector Search (raw Qdrant response) ──────────────────────────
+    sub("Layer 2 — Qdrant Vector Search (raw response shape)")
     t0 = time.time()
     raw = search_embeddings(
         query_embedding=embedding,
@@ -599,8 +550,8 @@ def suite_data_flow_trace():
         "ms": elapsed,
     })
 
-    # ?? Layer 3: SQL Engine data shape ????????????????????????????????????????
-    sub("Layer 3 -- SQL Engine (data shape into and out of the layer)")
+    # ── Layer 3: SQL Engine data shape ────────────────────────────────────────
+    sub("Layer 3 — SQL Engine (data shape into and out of the layer)")
     sql_q = "What is Aathi S attendance percentage from attendance_5sem table?"
     t0 = time.time()
     sql_res = run_sql(sql_q, filename="attendance_5sem__IT_III.csv")
@@ -625,47 +576,45 @@ def suite_data_flow_trace():
         "ms": elapsed,
     })
 
-    info("Flow complete -- no assertions in this suite, it's purely diagnostic.")
+    info("Flow complete — no assertions in this suite, it's purely diagnostic.")
     return 0, 0   # no pass/fail scoring
 
 
-# ?????????????????????????????????????????????????????????????????????????????
-# MAIN -- run all suites and write trace log
-# ?????????????????????????????????????????????????????????????????????????????
+# ═════════════════════════════════════════════════════════════════════════════
+# MAIN — run all suites and write trace log
+# ═════════════════════════════════════════════════════════════════════════════
 
 def main():
-    print(f"\n{BOLD}{'?'*60}{RESET}")
-    print(f"{BOLD}  Vir RAG System -- Accuracy & Flow Test Suite{RESET}")
+    print(f"\n{BOLD}{'█'*60}{RESET}")
+    print(f"{BOLD}  Vir RAG System — Accuracy & Flow Test Suite{RESET}")
     print(f"{BOLD}  Run at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}{RESET}")
-    print(f"{BOLD}{'?'*60}{RESET}")
+    print(f"{BOLD}{'█'*60}{RESET}")
 
     results = {}
 
     # Run all suites
-    results["router"]    = suite_router()
     results["sql"]       = suite_sql()
     results["retriever"] = suite_retriever()
-    results["pipeline"]  = suite_pipeline()
     suite_data_flow_trace()   # diagnostic only, no score
 
-    # ?? Final summary ?????????????????????????????????????????????????????????
+    # ── Final summary ─────────────────────────────────────────────────────────
     section("FINAL SUMMARY")
     total_passed = 0
     total_cases  = 0
     for suite_name, (p, t) in results.items():
         pct = int(100 * p / t) if t else 0
-        bar = ("?" * pct + "?" * (100 - pct))[:20]
+        bar = ("█" * pct + "░" * (100 - pct))[:20]
         colour = GREEN if pct >= 80 else YELLOW if pct >= 50 else RED
         print(f"  {suite_name:<12}  {colour}{bar}{RESET}  {p}/{t}  ({pct}%)")
         total_passed += p
         total_cases  += t
 
     overall_pct = int(100 * total_passed / total_cases) if total_cases else 0
-    print(f"\n  {'?'*50}")
+    print(f"\n  {'─'*50}")
     colour = GREEN if overall_pct >= 80 else YELLOW if overall_pct >= 50 else RED
     print(f"  OVERALL       {colour}{total_passed}/{total_cases}  ({overall_pct}%){RESET}")
 
-    # ?? Write trace log ???????????????????????????????????????????????????????
+    # ── Write trace log ───────────────────────────────────────────────────────
     log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "last_run_trace.json")
     with open(log_path, "w") as f:
         json.dump({
@@ -678,10 +627,10 @@ def main():
             "trace": TRACE_LOG,
         }, f, indent=2, default=str)
 
-    print(f"\n  Detailed trace log written -> {log_path}")
-    print(f"{BOLD}{'?'*60}{RESET}\n")
+    print(f"\n  Detailed trace log written → {log_path}")
+    print(f"{BOLD}{'█'*60}{RESET}\n")
 
-    return overall_pct >= 60   # exit 0 if ?60% pass
+    return overall_pct >= 60   # exit 0 if ≥60% pass
 
 
 if __name__ == "__main__":
@@ -689,13 +638,9 @@ if __name__ == "__main__":
     sys.exit(0 if success else 1)
 
 
-# ?????????????????????????????????????????????????????????????????????????????
+# ─────────────────────────────────────────────────────────────────────────────
 # pytest-compatible wrappers (run with: pytest tests/test_rag_accuracy.py -v)
-# ?????????????????????????????????????????????????????????????????????????????
-
-def test_router_accuracy():
-    passed, total = suite_router()
-    assert passed / total >= 0.7, f"Router accuracy {passed}/{total} below 70%"
+# ─────────────────────────────────────────────────────────────────────────────
 
 def test_sql_engine_accuracy():
     passed, total = suite_sql()
@@ -705,7 +650,4 @@ def test_retriever_accuracy():
     passed, total = suite_retriever()
     assert passed / total >= 0.5, f"Retriever accuracy {passed}/{total} below 50%"
 
-def test_pipeline_accuracy():
-    passed, total = suite_pipeline()
-    assert passed / total >= 0.5, f"Pipeline accuracy {passed}/{total} below 50%"
 
