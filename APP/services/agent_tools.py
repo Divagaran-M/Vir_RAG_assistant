@@ -1,10 +1,10 @@
-﻿"""
-services/agent_tools.py -- Tool Definitions + Executor for the Vir Agent
+"""
+services/agent_tools.py — Tool Definitions + Executor for the Vir Agent
 
 Exposes three categories of tools to the Groq LLM:
-  1. vector_search  -- semantic search in Qdrant (documents, PDFs, regulations)
-  2. sql_query      -- natural-language SQL against the campus SQLite database
-  3. Map tools      -- find_path, list_rooms, get_room_info (campus navigation)
+  1. vector_search  — semantic search in Qdrant (documents, PDFs, regulations)
+  2. sql_query      — natural-language SQL against the campus SQLite database
+  3. Map tools      — find_path, list_rooms, get_room_info (campus navigation)
 
 The LLM receives AGENT_TOOL_DEFINITIONS and calls execute_agent_tool() for
 each tool call it makes.
@@ -29,7 +29,7 @@ def _network_retryable(exc: BaseException) -> bool:
 
 
 
-# ?? Tool Definitions (sent to Groq) ????????????????????????????????????????????
+# ── Tool Definitions (sent to Groq) ────────────────────────────────────────────
 
 _VECTOR_SEARCH_DEF = {
     "type": "function",
@@ -48,7 +48,7 @@ _VECTOR_SEARCH_DEF = {
                 "query": {
                     "type": "string",
                     "description": (
-                        "The search query. Be specific -- rephrase as a descriptive phrase "
+                        "The search query. Be specific — rephrase as a descriptive phrase "
                         "to improve semantic match (e.g. 'GPA calculation formula for arrear students')."
                     ),
                 },
@@ -97,7 +97,7 @@ AGENT_TOOL_DEFINITIONS = [
 ]
 
 
-# ?? Tool Executor ??????????????????????????????????????????????????????????????
+# ── Tool Executor ──────────────────────────────────────────────────────────────
 
 def execute_agent_tool(tool_name: str, arguments_json: str) -> str:
     """
@@ -118,7 +118,7 @@ def execute_agent_tool(tool_name: str, arguments_json: str) -> str:
     print(f"\n[AgentTools] Executing tool: {tool_name}")
     print(f"[AgentTools] Arguments: {args}")
 
-    # ?? vector_search ??????????????????????????????????????????????????????????
+    # ── vector_search ──────────────────────────────────────────────────────────
     if tool_name == "vector_search":
         query = args.get("query", "")
         top_k = min(int(args.get("top_k", 8)), 15)
@@ -149,7 +149,7 @@ def execute_agent_tool(tool_name: str, arguments_json: str) -> str:
 
             # Build context with inline source markers
             context_parts = []
-            sources_seen = {}   # filename -> set of pages
+            sources_seen = {}   # filename → set of pages
             for doc, page, fname in zip(documents, pages, filenames):
                 if doc not in unique_docs:
                     continue
@@ -177,7 +177,7 @@ def execute_agent_tool(tool_name: str, arguments_json: str) -> str:
         except Exception as e:
             return f"[Tool Error] vector_search failed: {e}"
 
-    # ?? sql_query ??????????????????????????????????????????????????????????????
+    # ── sql_query ──────────────────────────────────────────────────────────────
     elif tool_name == "sql_query":
         question = args.get("question", "")
         if not question:
@@ -200,10 +200,9 @@ def execute_agent_tool(tool_name: str, arguments_json: str) -> str:
         except Exception as e:
             return f"[Tool Error] sql_query failed: {e}"
 
-    # ?? Map tools (find_path, list_rooms, get_room_info) ??????????????????????
+    # ── Map tools (find_path, list_rooms, get_room_info) ──────────────────────
     elif tool_name in ("find_path", "list_rooms", "get_room_info"):
         return execute_map_tool(tool_name, arguments_json)
 
     else:
         return f"[Tool Error] Unknown tool: {tool_name}"
-
