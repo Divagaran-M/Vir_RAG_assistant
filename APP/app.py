@@ -14,6 +14,7 @@ import streamlit.components.v1 as components
 
 from ui.api import upload_pdf, ask_question, get_suggestions, stream_chat
 from services.hum_detector import hum_component_html
+
 # --------------------------------------------------
 # Page Config
 # --------------------------------------------------

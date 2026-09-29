@@ -1,4 +1,4 @@
-// Speech Service handling SpeechRecognition and SpeechSynthesis
+// Speech Service handling Microphone SpeechRecognition and Microsoft Edge Neural Text-to-Speech
 
 export interface SpeechRecognitionResultCallback {
   (text: string, isFinal: boolean): void;
@@ -8,9 +8,81 @@ export interface SpeechRecognitionErrorCallback {
   (error: string): void;
 }
 
+export interface EdgeVoiceOption {
+  id: string;
+  name: string;
+  gender: string;
+  locale: string;
+  accent: string;
+  recommended?: boolean;
+}
+
+export const POPULAR_EDGE_VOICES: EdgeVoiceOption[] = [
+  {
+    id: 'en-IN-NeerjaNeural',
+    name: 'Neerja',
+    gender: 'Female',
+    locale: 'en-IN',
+    accent: 'Indian English',
+    recommended: true
+  },
+  {
+    id: 'en-IN-PrabhatNeural',
+    name: 'Prabhat',
+    gender: 'Male',
+    locale: 'en-IN',
+    accent: 'Indian English',
+    recommended: true
+  },
+  {
+    id: 'en-US-JennyNeural',
+    name: 'Jenny',
+    gender: 'Female',
+    locale: 'en-US',
+    accent: 'US English',
+    recommended: false
+  },
+  {
+    id: 'en-US-GuyNeural',
+    name: 'Guy',
+    gender: 'Male',
+    locale: 'en-US',
+    accent: 'US English',
+    recommended: false
+  },
+  {
+    id: 'en-US-AriaNeural',
+    name: 'Aria',
+    gender: 'Female',
+    locale: 'en-US',
+    accent: 'US English',
+    recommended: false
+  },
+  {
+    id: 'en-GB-SoniaNeural',
+    name: 'Sonia',
+    gender: 'Female',
+    locale: 'en-GB',
+    accent: 'UK English',
+    recommended: false
+  },
+  {
+    id: 'ta-IN-PallaviNeural',
+    name: 'Pallavi',
+    gender: 'Female',
+    locale: 'ta-IN',
+    accent: 'Tamil',
+    recommended: false
+  }
+];
+
 class SpeechService {
   private isVoiceEnabled: boolean = true;
+  private selectedVoice: string = 'en-IN-NeerjaNeural';
   private currentUtterance: SpeechSynthesisUtterance | null = null;
+  private currentAudio: HTMLAudioElement | null = null;
+  private currentAudioUrl: string | null = null;
+  private abortController: AbortController | null = null;
   private recognition: any = null;
   private isRecognizing: boolean = false;
   private onSpeakingStateChangeListeners: ((speaking: boolean, currentMessageId?: string) => void)[] = [];
@@ -18,8 +90,13 @@ class SpeechService {
 
   constructor() {
     try {
-      const saved = localStorage.getItem('college_ai_voice_enabled');
-      this.isVoiceEnabled = saved !== null ? saved === 'true' : true;
+      const savedEnabled = localStorage.getItem('college_ai_voice_enabled');
+      this.isVoiceEnabled = savedEnabled !== null ? savedEnabled === 'true' : true;
+
+      const savedVoice = localStorage.getItem('college_ai_edge_voice');
+      if (savedVoice) {
+        this.selectedVoice = savedVoice;
+      }
     } catch {
       this.isVoiceEnabled = true;
     }
@@ -41,6 +118,27 @@ class SpeechService {
     if (!enabled) {
       this.stopSpeaking();
     }
+  }
+
+  public getSelectedVoice(): string {
+    return this.selectedVoice;
+  }
+
+  public setSelectedVoice(voiceId: string): void {
+    this.selectedVoice = voiceId;
+    try {
+      localStorage.setItem('college_ai_edge_voice', voiceId);
+    } catch {
+      // ignore
+    }
+    // Stop current speech if active so next speak uses new voice
+    if (this.isCurrentlySpeaking()) {
+      this.stopSpeaking();
+    }
+  }
+
+  public getAvailableVoices(): EdgeVoiceOption[] {
+    return POPULAR_EDGE_VOICES;
   }
 
   private initRecognition() {
@@ -148,7 +246,7 @@ class SpeechService {
   }
 
   public isSpeechSynthesisSupported(): boolean {
-    return typeof window !== 'undefined' && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
+    return typeof window !== 'undefined' && ('Audio' in window || 'speechSynthesis' in window);
   }
 
   public addSpeakingListener(listener: (speaking: boolean, currentMessageId?: string) => void): () => void {
@@ -165,25 +263,128 @@ class SpeechService {
 
   public cleanTextForSpeech(rawText: string): string {
     return rawText
+      // Remove code blocks
+      .replace(/```[\s\S]*?```/g, ' [code block] ')
+      // Convert markdown links [text](url) to text
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      // Remove emojis
       .replace(/[\u{1F600}-\u{1F6FF}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
+      // Remove markdown formatting symbols
       .replace(/[*_~`#>\-•]/g, ' ')
-      .replace(/\s+/g, ' ')
+      // Expand common college abbreviations
       .replace(/\(B\.E\. \/ B\.Tech\)/gi, 'B E and B Tech')
       .replace(/P\.T\. Lee CNCET/gi, 'P T Lee College of Engineering')
-      .replace(/CSE/gi, 'Computer Science and Engineering')
-      .replace(/IT/gi, 'Information Technology')
-      .replace(/ECE/gi, 'Electronics and Communication')
+      .replace(/\bCSE\b/gi, 'Computer Science and Engineering')
+      .replace(/\bIT\b/gi, 'Information Technology')
+      .replace(/\bECE\b/gi, 'Electronics and Communication')
+      .replace(/\bEEE\b/gi, 'Electrical and Electronics')
+      .replace(/\bMECH\b/gi, 'Mechanical Engineering')
+      .replace(/\s+/g, ' ')
       .trim();
   }
 
-  public speak(text: string, messageId?: string, force: boolean = false): void {
-    if (!this.isSpeechSynthesisSupported()) return;
+  private cleanupCurrentAudio(): void {
+    if (this.currentAudio) {
+      try {
+        this.currentAudio.pause();
+        this.currentAudio.currentTime = 0;
+        this.currentAudio.onplay = null;
+        this.currentAudio.onended = null;
+        this.currentAudio.onerror = null;
+      } catch {
+        // ignore
+      }
+      this.currentAudio = null;
+    }
+    if (this.currentAudioUrl) {
+      try {
+        URL.revokeObjectURL(this.currentAudioUrl);
+      } catch {
+        // ignore
+      }
+      this.currentAudioUrl = null;
+    }
+  }
+
+  /**
+   * Speak given text using Microsoft Edge Neural TTS with browser WebSpeech fallback.
+   */
+  public async speak(text: string, messageId?: string, force: boolean = false): Promise<void> {
     if (!this.isVoiceEnabled && !force) return;
 
     this.stopSpeaking();
 
     const cleanText = this.cleanTextForSpeech(text);
     if (!cleanText) return;
+
+    // Set active message id & notify speaking animation
+    this.notifySpeakingState(true, messageId);
+
+    const controller = new AbortController();
+    this.abortController = controller;
+
+    try {
+      const response = await fetch('/api/tts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          text: cleanText,
+          voice: this.selectedVoice,
+          rate: '+0%',
+          pitch: '+0Hz'
+        }),
+        signal: controller.signal
+      });
+
+      if (!response.ok) {
+        throw new Error(`Edge TTS API returned HTTP status ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      if (controller.signal.aborted) {
+        return;
+      }
+
+      this.cleanupCurrentAudio();
+
+      const audioUrl = URL.createObjectURL(blob);
+      this.currentAudioUrl = audioUrl;
+
+      const audio = new Audio(audioUrl);
+      this.currentAudio = audio;
+
+      audio.onended = () => {
+        this.cleanupCurrentAudio();
+        this.notifySpeakingState(false);
+      };
+
+      audio.onerror = (e) => {
+        console.warn('Edge TTS audio playback error:', e);
+        this.cleanupCurrentAudio();
+        this.notifySpeakingState(false);
+      };
+
+      await audio.play();
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        // Playback was cancelled by the user
+        return;
+      }
+      console.warn('Microsoft Edge TTS failed, falling back to WebSpeech API:', err);
+      this.speakFallbackBrowser(cleanText, messageId);
+    }
+  }
+
+  /**
+   * Fallback to browser SpeechSynthesis if the Edge TTS backend service is unreachable.
+   */
+  private speakFallbackBrowser(cleanText: string, messageId?: string): void {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      this.notifySpeakingState(false);
+      return;
+    }
 
     try {
       const utterance = new SpeechSynthesisUtterance(cleanText);
@@ -193,7 +394,7 @@ class SpeechService {
 
       const voices = window.speechSynthesis.getVoices();
       const preferredVoice = voices.find(
-        v => v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Samantha') || v.name.includes('Zira'))
+        v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Samantha') || v.name.includes('Zira'))
       ) || voices.find(v => v.lang.startsWith('en'));
 
       if (preferredVoice) {
@@ -226,23 +427,35 @@ class SpeechService {
   }
 
   public stopSpeaking(): void {
-    if (this.isSpeechSynthesisSupported()) {
+    if (this.abortController) {
+      try {
+        this.abortController.abort();
+      } catch {
+        // ignore
+      }
+      this.abortController = null;
+    }
+
+    this.cleanupCurrentAudio();
+
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       try {
         window.speechSynthesis.cancel();
       } catch {
         // ignore
       }
+      this.currentUtterance = null;
     }
-    this.currentUtterance = null;
+
     this.notifySpeakingState(false);
   }
 
   public isCurrentlySpeaking(): boolean {
-    return (
-      this.isSpeechSynthesisSupported() &&
-      window.speechSynthesis.speaking &&
-      !window.speechSynthesis.paused
-    );
+    const isAudioActive = Boolean(this.currentAudio && !this.currentAudio.paused && !this.currentAudio.ended);
+    const isUtteranceActive = Boolean(typeof window !== 'undefined' && 'speechSynthesis' in window && window.speechSynthesis.speaking && !window.speechSynthesis.paused);
+    const isFetching = Boolean(this.abortController);
+
+    return isAudioActive || isUtteranceActive || isFetching;
   }
 
   public getActiveSpeakingMessageId(): string | undefined {

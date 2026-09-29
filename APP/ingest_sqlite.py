@@ -63,6 +63,27 @@ def get_connection(db_path: str = DB_PATH) -> sqlite3.Connection:
     return conn
 
 
+def upsert_row(conn: sqlite3.Connection, table: str, values: dict, key_columns: tuple[str, ...]):
+    """Update a static ETL row when present, otherwise insert it."""
+    columns = list(values)
+    key_clause = " AND ".join(f"{column} IS ?" for column in key_columns)
+    key_values = [values[column] for column in key_columns]
+    update_columns = [column for column in columns if column not in key_columns]
+
+    cursor = conn.execute(
+        f"UPDATE {table} SET "
+        + ", ".join(f"{column} = ?" for column in update_columns)
+        + f" WHERE {key_clause}",
+        [values[column] for column in update_columns] + key_values,
+    )
+    if cursor.rowcount == 0:
+        conn.execute(
+            f"INSERT INTO {table} ({', '.join(columns)}) "
+            f"VALUES ({', '.join('?' for _ in columns)})",
+            [values[column] for column in columns],
+        )
+
+
 def init_schema(conn: sqlite3.Connection):
     """Create tables, indexes, and analytical views."""
     c = conn.cursor()
@@ -447,13 +468,18 @@ def ingest_faculty(conn: sqlite3.Connection):
             cabin = str(row[9] if len(row) > 9 and pd.notna(row[9]) else "").strip()
             incharge = str(row[10] if len(row) > 10 and pd.notna(row[10]) else "").strip()
 
-            c.execute("""
-            INSERT INTO faculty (
-                faculty_name, qualification, designation, department,
-                phone_primary, phone_secondary, email, room_cabin_no,
-                class_incharge_role, permanent_address
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (name, qual, desig, dept, phone1, phone2, email, cabin, incharge, addr))
+            upsert_row(conn, "faculty", {
+                "faculty_name": name,
+                "qualification": qual,
+                "designation": desig,
+                "department": dept,
+                "phone_primary": phone1,
+                "phone_secondary": phone2,
+                "email": email,
+                "room_cabin_no": cabin,
+                "class_incharge_role": incharge,
+                "permanent_address": addr,
+            }, ("faculty_name", "department"))
             loaded += 1
 
     conn.commit()
@@ -666,19 +692,25 @@ def ingest_assessments(conn: sqlite3.Connection):
                     score_num, grade, gp, is_abs, is_arr = parse_score(raw_val)
                     max_m = 100.0
 
-                    c.execute("""
-                    INSERT INTO student_assessments (
-                        reg_no, student_name, department, academic_year, semester,
-                        exam_type, exam_date, course_code, course_title,
-                        score_raw, score_numeric, grade, grade_points,
-                        is_absent, is_arrear, max_marks, source_sheet
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        reg_no, name, dept, acad_year, sem,
-                        exam_type, None, code, title,
-                        str(raw_val).strip(), score_num, grade, gp,
-                        is_abs, is_arr, max_m, f"{fname}::{sheet}"
-                    ))
+                    upsert_row(conn, "student_assessments", {
+                        "reg_no": reg_no,
+                        "student_name": name,
+                        "department": dept,
+                        "academic_year": acad_year,
+                        "semester": sem,
+                        "exam_type": exam_type,
+                        "exam_date": None,
+                        "course_code": code,
+                        "course_title": title,
+                        "score_raw": str(raw_val).strip(),
+                        "score_numeric": score_num,
+                        "grade": grade,
+                        "grade_points": gp,
+                        "is_absent": is_abs,
+                        "is_arrear": is_arr,
+                        "max_marks": max_m,
+                        "source_sheet": f"{fname}::{sheet}",
+                    }, ("reg_no", "academic_year", "semester", "exam_type", "course_code", "source_sheet"))
                     total_marks_records += 1
 
     conn.commit()
@@ -719,13 +751,18 @@ def ingest_attendance(conn: sqlite3.Connection):
 
                 status = "ELIGIBLE" if pct >= 75.0 else ("CONDONATION" if pct >= 65.0 else "NOT_ELIGIBLE")
 
-                c.execute("""
-                INSERT INTO attendance (
-                    reg_no, student_name, department, semester,
-                    total_classes_conducted, classes_attended, classes_missed,
-                    attendance_percentage, exam_eligibility_status, tracking_period
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (reg, name, "IT", 5, int(total_hours), int(attended_hours), int(total_hours - attended_hours), pct, status, "16/7/25 to 3/9/25"))
+                upsert_row(conn, "attendance", {
+                    "reg_no": reg,
+                    "student_name": name,
+                    "department": "IT",
+                    "semester": 5,
+                    "total_classes_conducted": int(total_hours),
+                    "classes_attended": int(attended_hours),
+                    "classes_missed": int(total_hours - attended_hours),
+                    "attendance_percentage": pct,
+                    "exam_eligibility_status": status,
+                    "tracking_period": "16/7/25 to 3/9/25",
+                }, ("reg_no", "semester", "tracking_period"))
                 loaded += 1
 
     p_admin = os.path.join(DATA_ROOT, "ADMINISTRATION", "PT_Lee_CNCET_Academic_Data_RAG.xlsx")
@@ -750,14 +787,21 @@ def ingest_attendance(conn: sqlite3.Connection):
 
                 status = str(row.get("Anna University Exam Eligibility") or "ELIGIBLE").strip().upper()
 
-                c.execute("""
-                INSERT INTO attendance (
-                    reg_no, student_name, department, semester,
-                    course_code, course_title, faculty_incharge,
-                    total_classes_conducted, classes_attended, classes_missed,
-                    attendance_percentage, exam_eligibility_status, tracking_period
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, ("INSTITUTIONAL_BATCH", "Class Aggregate", "IT", 4, code, cname, fac, total_c, att_c, miss_c, round(pct, 2), status, "Academic Semester"))
+                upsert_row(conn, "attendance", {
+                    "reg_no": "INSTITUTIONAL_BATCH",
+                    "student_name": "Class Aggregate",
+                    "department": "IT",
+                    "semester": 4,
+                    "course_code": code,
+                    "course_title": cname,
+                    "faculty_incharge": fac,
+                    "total_classes_conducted": total_c,
+                    "classes_attended": att_c,
+                    "classes_missed": miss_c,
+                    "attendance_percentage": round(pct, 2),
+                    "exam_eligibility_status": status,
+                    "tracking_period": "Academic Semester",
+                }, ("reg_no", "semester", "course_code", "tracking_period"))
                 loaded += 1
 
     # Back-fill attendance_percentage for any rows where it was not set during import
@@ -1036,9 +1080,6 @@ def main():
     print("  P.T. LEE CNCET — UNIFIED SQLITE DATABASE INGESTION PIPELINE")
     print(f"  Target DB: {DB_PATH}")
     print("=" * 70)
-
-    if os.path.exists(DB_PATH):
-        os.remove(DB_PATH)
 
     conn = get_connection(DB_PATH)
     init_schema(conn)

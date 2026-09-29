@@ -11,7 +11,10 @@ from fastapi.responses import FileResponse, JSONResponse
 
 router = APIRouter()
 
-HUM_MODELS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "HUM", "models")
+_base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_hum_lower = os.path.join(_base_dir, "hum", "models")
+_hum_upper = os.path.join(_base_dir, "HUM", "models")
+HUM_MODELS_DIR = _hum_lower if os.path.isdir(_hum_lower) else _hum_upper
 
 
 @router.get("/hum/models/{filename}")

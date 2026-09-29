@@ -27,21 +27,18 @@ class AIService {
   private sessionId: string;
   private backendBaseUrl: string;
   private healthListeners: Set<HealthListener> = new Set();
-  private lastHealthStatus: BackendHealthStatus = { online: false };
-  private healthCheckTimer: any = null;
+  private lastHealthStatus: BackendHealthStatus = {
+    online: true,
+    status: 'healthy',
+    service: 'Vir Campus Assistant RAG API',
+    model: 'Groq Llama 3 / Agent',
+    version: '2.0.0'
+  };
 
   constructor() {
     this.sessionId = this.initSessionId();
     // Use relative path by default to leverage Vite proxy, with direct fallback option
     this.backendBaseUrl = (import.meta as any).env?.VITE_API_URL || '';
-    
-    // Start background health polling every 15 seconds
-    this.checkBackendHealth();
-    if (typeof window !== 'undefined') {
-      this.healthCheckTimer = setInterval(() => {
-        this.checkBackendHealth();
-      }, 15000);
-    }
   }
 
   /**
@@ -98,55 +95,10 @@ class AIService {
   }
 
   /**
-   * Checks whether the FastAPI backend is running and healthy
+   * Returns current backend connection status without calling /health endpoints.
    */
   public async checkBackendHealth(): Promise<BackendHealthStatus> {
-    const startTime = performance.now();
-    const candidateUrls = this.backendBaseUrl
-      ? [`${this.backendBaseUrl}/health`, `${this.backendBaseUrl}/api/health`]
-      : ['/health', '/api/health', 'http://127.0.0.1:8000/health'];
-
-    for (const url of candidateUrls) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000);
-
-        const res = await fetch(url, {
-          method: 'GET',
-          headers: { 'Accept': 'application/json' },
-          signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-
-        if (res.ok) {
-          const data = await res.json();
-          const latencyMs = Math.round(performance.now() - startTime);
-          const status: BackendHealthStatus = {
-            online: true,
-            status: data.status || 'healthy',
-            service: data.service || 'Vir Campus Assistant RAG API',
-            model: data.model || 'Groq Llama 3 / Agent',
-            version: data.version || '1.0.0',
-            latencyMs,
-            message: data.message
-          };
-          this.lastHealthStatus = status;
-          this.notifyHealthListeners(status);
-          return status;
-        }
-      } catch {
-        // try next candidate URL
-      }
-    }
-
-    const offlineStatus: BackendHealthStatus = {
-      online: false,
-      status: 'offline',
-      message: 'Backend disconnected (using local fallback)'
-    };
-    this.lastHealthStatus = offlineStatus;
-    this.notifyHealthListeners(offlineStatus);
-    return offlineStatus;
+    return this.lastHealthStatus;
   }
 
   private notifyHealthListeners(status: BackendHealthStatus) {
@@ -298,6 +250,15 @@ class AIService {
             }
           }
 
+          this.lastHealthStatus = {
+            online: true,
+            status: 'healthy',
+            service: 'Vir Campus Assistant RAG API',
+            model: 'Groq Llama 3 / Agent',
+            version: '2.0.0'
+          };
+          this.notifyHealthListeners(this.lastHealthStatus);
+
           return {
             text: answerText,
             categoryTag,
@@ -316,6 +277,13 @@ class AIService {
         continue;
       }
     }
+
+    this.lastHealthStatus = {
+      online: false,
+      status: 'offline',
+      message: 'Backend disconnected (using local fallback)'
+    };
+    this.notifyHealthListeners(this.lastHealthStatus);
 
     return null;
   }

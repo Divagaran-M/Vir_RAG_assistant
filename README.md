@@ -196,8 +196,8 @@ python navigate.py "Canteen" "ECE - IV Year"
 | **Web UI** | Streamlit | Chat interface with simulated token streaming |
 | **Pathfinding** | Dijkstra Algorithm | Multi-floor indoor campus shortest path navigation |
 
----
 
+---
 ## 📄 License
 
 Developed for educational and institutional assistance at **P.T. Lee Chengalvaraya Naicker College of Engineering and Technology (PTLCNCET)**.

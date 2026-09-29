@@ -27,10 +27,29 @@ from tenacity import (
 
 from config import GROQ_API_KEY, GROQ_MODEL
 
-
 logger = logging.getLogger(__name__)
 
-client = Groq(api_key=GROQ_API_KEY)
+
+# Safe client initialization
+_client = None
+
+
+def get_client() -> Groq:
+    global _client
+    if _client is None:
+        if not GROQ_API_KEY:
+            raise ValueError(
+                "GROQ_API_KEY is not set. Please set it in your .env file or environment variables."
+            )
+        _client = Groq(api_key=GROQ_API_KEY)
+    return _client
+
+
+# Module-level client instance for backward compatibility
+try:
+    client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+except Exception:
+    client = None
 
 _GROQ_RETRYABLE = (
     RateLimitError,
@@ -65,7 +84,8 @@ def generate_response(prompt: str) -> str:
     """
 
     try:
-        completion = client.chat.completions.create(
+        groq_client = get_client()
+        completion = groq_client.chat.completions.create(
             model=GROQ_MODEL,
             messages=[
                 {

@@ -1,60 +1,52 @@
 # -----------------------------
-# Python
+# Python & Virtual Environment
 # -----------------------------
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
-
-# -----------------------------
-# Virtual Environment
-# -----------------------------
 .venv/
 venv/
 env/
 
 # -----------------------------
-# Environment Variables
+# Environment & Secrets
 # -----------------------------
 .env
+.env.*
+!.env.example
 
 # -----------------------------
-# ChromaDB
+# Databases & Vector Stores
 # -----------------------------
+data/app.db
+data/sessions.db
+data/qdrant_db/
 db/
+*.db
+*.sqlite
+*.sqlite3
 
 # -----------------------------
-# Uploaded Files
+# Uploaded & Runtime Files
 # -----------------------------
 data/uploads/
+tests/last_run_trace.json
+*.log
 
 # -----------------------------
-# VS Code
+# IDE & OS
 # -----------------------------
 .vscode/
-
-# -----------------------------
-# OS Files
-# -----------------------------
+.idea/
 .DS_Store
 Thumbs.db
 
 # -----------------------------
-# Python Cache
+# Cache & Builds
 # -----------------------------
 .pytest_cache/
 .mypy_cache/
-
-# -----------------------------
-# Logs
-# -----------------------------
-*.log
-# Distribution / Build
+.ruff_cache/
 dist/
 build/
-
-# Streamlit
-.streamlit/secrets.toml
-
-# IDE
-.idea/

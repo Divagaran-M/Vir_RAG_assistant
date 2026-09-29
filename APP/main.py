@@ -5,6 +5,9 @@ from routes.chat import router as chat_router
 from routes.suggestions import router as suggestions_router
 from routes.hum import router as hum_router
 
+from routes.hum import router as hum_router
+from routes.tts import router as tts_router
+
 
 app = FastAPI(
     title="Vir Campus Assistant API",
@@ -25,7 +28,18 @@ def home():
     return {"message": "Vir Campus Assistant Backend Running 🚀"}
 
 
+@app.get("/health")
+@app.get("/api/health")
+def health():
+    return {
+        "status": "healthy",
+        "service": "Vir Campus Assistant API",
+        "version": "2.0.0"
+    }
+
+
 app.include_router(upload_router)
 app.include_router(chat_router)
 app.include_router(suggestions_router)
 app.include_router(hum_router)
+app.include_router(tts_router)
