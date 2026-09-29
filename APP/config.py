@@ -1,8 +1,18 @@
 import os
-
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+# Ensure .env is loaded regardless of current working directory
+_BASE_DIR = Path(__file__).resolve().parent
+_env_app = _BASE_DIR / ".env"
+_env_root = _BASE_DIR.parent / ".env"
+
+if _env_app.exists():
+    load_dotenv(dotenv_path=_env_app)
+elif _env_root.exists():
+    load_dotenv(dotenv_path=_env_root)
+else:
+    load_dotenv()
 
 # -------------------------
 # API Keys

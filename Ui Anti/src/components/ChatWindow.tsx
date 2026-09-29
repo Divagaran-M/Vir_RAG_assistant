@@ -32,6 +32,8 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ externalQuery }) => {
   const [messages, setMessages] = useState<ChatMessageData[]>([INITIAL_MESSAGE]);
   const [isThinking, setIsThinking] = useState<boolean>(false);
   const [isVoiceEnabled, setIsVoiceEnabled] = useState<boolean>(speechService.getVoiceEnabled());
+  const [selectedVoice, setSelectedVoice] = useState<string>(speechService.getSelectedVoice());
+  const availableVoices = speechService.getAvailableVoices();
   const [speakingMessageId, setSpeakingMessageId] = useState<string | undefined>(undefined);
   const [selectedOrigin, setSelectedOrigin] = useState<CampusLocation | null>(null);
 
@@ -295,6 +297,27 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ externalQuery }) => {
               </>
             )}
           </button>
+
+          {/* Voice Model Selector (when voice enabled) */}
+          {isVoiceEnabled && (
+            <select
+              value={selectedVoice}
+              onChange={(e) => {
+                const newVoice = e.target.value;
+                setSelectedVoice(newVoice);
+                speechService.setSelectedVoice(newVoice);
+              }}
+              title="Select AI Neural Voice"
+              aria-label="Select AI Neural Voice"
+              className="bg-white/95 border border-blue-200 text-blue-900 text-xs font-semibold rounded-xl px-2.5 py-1.5 hover:bg-blue-50/50 transition-colors shadow-2xs focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer max-w-[130px] sm:max-w-[170px] truncate"
+            >
+              {availableVoices.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.name} ({v.accent})
+                </option>
+              ))}
+            </select>
+          )}
 
           {/* Reset Conversation Button */}
           <button

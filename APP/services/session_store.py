@@ -1,11 +1,13 @@
-﻿"""
-services/session_store.py -- Persistent Conversation Memory
+# right now i don't need to have the session Memory 
+
+"""
+services/session_store.py — Persistent Conversation Memory
 
 Stores conversation history in SQLite, keyed by session_id.
 Each session keeps the last 20 turns (pruned automatically).
 
 Used by:
-  - routes/chat.py -- to load/save history per session
+  - routes/chat.py — to load/save history per session
   - Streamlit passes session_id as a UUID generated at app startup
 """
 
@@ -41,19 +43,24 @@ def _get_conn() -> sqlite3.Connection:
 
 
 def load_history(session_id: str) -> list[dict]:
+
     """
     Load the conversation history for a session.
-    Returns a list of {role, content} dicts, ordered oldest first.
+    Returns a list of {role, content}  dicts, ordered oldest first.
     """
+    
     if not session_id:
         return []
     conn = _get_conn()
+    
     try:
         rows = conn.execute(
             "SELECT role, content FROM sessions WHERE session_id = ? ORDER BY turn_index ASC",
             (session_id,),
         ).fetchall()
+    
         return [{"role": row["role"], "content": row["content"]} for row in rows]
+    
     finally:
         conn.close()
 
@@ -123,4 +130,3 @@ def prune_old_sessions():
             print(f"[SessionStore] Pruned {deleted} old session turns.")
     finally:
         conn.close()
-

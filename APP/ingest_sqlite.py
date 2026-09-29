@@ -1,5 +1,5 @@
-﻿"""
-ingest_sqlite.py -- High-Performance ETL Ingestion Pipeline.
+"""
+ingest_sqlite.py — High-Performance ETL Ingestion Pipeline.
 
 Consolidates all 13 Excel workbooks and 35+ sheets from the DATA folder into
 a clean, modular 5-Table (+ Regulations & Views) SQLite database at:
@@ -32,7 +32,7 @@ import pandas as pd
 
 warnings.filterwarnings("ignore")
 
-# ?? Paths ?????????????????????????????????????????????????????????????????????
+# ── Paths ─────────────────────────────────────────────────────────────────────
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_ROOT = os.path.join(APP_DIR, "..", "DATA")
 DB_DIR = os.path.join(APP_DIR, "data")
@@ -61,6 +61,27 @@ def get_connection(db_path: str = DB_PATH) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
+
+
+def upsert_row(conn: sqlite3.Connection, table: str, values: dict, key_columns: tuple[str, ...]):
+    """Update a static ETL row when present, otherwise insert it."""
+    columns = list(values)
+    key_clause = " AND ".join(f"{column} IS ?" for column in key_columns)
+    key_values = [values[column] for column in key_columns]
+    update_columns = [column for column in columns if column not in key_columns]
+
+    cursor = conn.execute(
+        f"UPDATE {table} SET "
+        + ", ".join(f"{column} = ?" for column in update_columns)
+        + f" WHERE {key_clause}",
+        [values[column] for column in update_columns] + key_values,
+    )
+    if cursor.rowcount == 0:
+        conn.execute(
+            f"INSERT INTO {table} ({', '.join(columns)}) "
+            f"VALUES ({', '.join('?' for _ in columns)})",
+            [values[column] for column in columns],
+        )
 
 
 def init_schema(conn: sqlite3.Connection):
@@ -194,7 +215,7 @@ def init_schema(conn: sqlite3.Connection):
 
     CREATE INDEX IF NOT EXISTS idx_regulations_cat ON academic_regulations(category);
 
-    -- ?? Analytical Views ?????????????????????????????????????????????????????
+    -- ── Analytical Views ─────────────────────────────────────────────────────
     DROP VIEW IF EXISTS view_student_performance_summary;
     CREATE VIEW view_student_performance_summary AS
     SELECT 
@@ -252,7 +273,7 @@ def init_schema(conn: sqlite3.Connection):
     ) att ON s.reg_no = att.reg_no
     LEFT JOIN view_student_performance_summary perf ON s.reg_no = perf.reg_no;
 
-    -- ?? Schema Master (Ultra-Lightweight Columns Catalog) ???????????????
+    -- ── Schema Master (Ultra-Lightweight Columns Catalog) ───────────────
     -- Stores ONLY table/view name, object_type, and column_name.
     -- No datatypes, no sample values, no descriptions.
     CREATE TABLE IF NOT EXISTS schema_master (
@@ -267,9 +288,9 @@ def init_schema(conn: sqlite3.Connection):
     conn.commit()
 
 
-# ?????????????????????????????????????????????????????????????????????????????
+# ─────────────────────────────────────────────────────────────────────────────
 # 1. Students Ingestion
-# ?????????????????????????????????????????????????????????????????????????????
+# ─────────────────────────────────────────────────────────────────────────────
 
 def clean_dept(dept_str: str) -> str:
     if not dept_str or pd.isna(dept_str):
@@ -415,12 +436,12 @@ def ingest_students(conn: sqlite3.Connection):
             total_loaded += 1
 
     conn.commit()
-    print(f"? Students master table populated: {total_loaded} records.")
+    print(f"✓ Students master table populated: {total_loaded} records.")
 
 
-# ?????????????????????????????????????????????????????????????????????????????
+# ─────────────────────────────────────────────────────────────────────────────
 # 2. Faculty Ingestion
-# ?????????????????????????????????????????????????????????????????????????????
+# ─────────────────────────────────────────────────────────────────────────────
 
 def ingest_faculty(conn: sqlite3.Connection):
     print("\n--- Ingesting Faculty Directory ---")
@@ -447,22 +468,27 @@ def ingest_faculty(conn: sqlite3.Connection):
             cabin = str(row[9] if len(row) > 9 and pd.notna(row[9]) else "").strip()
             incharge = str(row[10] if len(row) > 10 and pd.notna(row[10]) else "").strip()
 
-            c.execute("""
-            INSERT INTO faculty (
-                faculty_name, qualification, designation, department,
-                phone_primary, phone_secondary, email, room_cabin_no,
-                class_incharge_role, permanent_address
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (name, qual, desig, dept, phone1, phone2, email, cabin, incharge, addr))
+            upsert_row(conn, "faculty", {
+                "faculty_name": name,
+                "qualification": qual,
+                "designation": desig,
+                "department": dept,
+                "phone_primary": phone1,
+                "phone_secondary": phone2,
+                "email": email,
+                "room_cabin_no": cabin,
+                "class_incharge_role": incharge,
+                "permanent_address": addr,
+            }, ("faculty_name", "department"))
             loaded += 1
 
     conn.commit()
-    print(f"? Faculty directory populated: {loaded} records.")
+    print(f"✓ Faculty directory populated: {loaded} records.")
 
 
-# ?????????????????????????????????????????????????????????????????????????????
+# ─────────────────────────────────────────────────────────────────────────────
 # 3. Courses Ingestion
-# ?????????????????????????????????????????????????????????????????????????????
+# ─────────────────────────────────────────────────────────────────────────────
 
 def ingest_courses(conn: sqlite3.Connection):
     print("\n--- Ingesting Curriculum & Courses Master ---")
@@ -508,12 +534,12 @@ def ingest_courses(conn: sqlite3.Connection):
                 loaded += 1
 
     conn.commit()
-    print(f"? Courses catalog populated: {loaded} records.")
+    print(f"✓ Courses catalog populated: {loaded} records.")
 
 
-# ?????????????????????????????????????????????????????????????????????????????
+# ─────────────────────────────────────────────────────────────────────────────
 # 4. Assessments & Marks Ingestion
-# ?????????????????????????????????????????????????????????????????????????????
+# ─────────────────────────────────────────────────────────────────────────────
 
 def parse_course_header(header_str: str) -> tuple[str, str]:
     h = str(header_str).strip().replace("\n", " ")
@@ -666,28 +692,34 @@ def ingest_assessments(conn: sqlite3.Connection):
                     score_num, grade, gp, is_abs, is_arr = parse_score(raw_val)
                     max_m = 100.0
 
-                    c.execute("""
-                    INSERT INTO student_assessments (
-                        reg_no, student_name, department, academic_year, semester,
-                        exam_type, exam_date, course_code, course_title,
-                        score_raw, score_numeric, grade, grade_points,
-                        is_absent, is_arrear, max_marks, source_sheet
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        reg_no, name, dept, acad_year, sem,
-                        exam_type, None, code, title,
-                        str(raw_val).strip(), score_num, grade, gp,
-                        is_abs, is_arr, max_m, f"{fname}::{sheet}"
-                    ))
+                    upsert_row(conn, "student_assessments", {
+                        "reg_no": reg_no,
+                        "student_name": name,
+                        "department": dept,
+                        "academic_year": acad_year,
+                        "semester": sem,
+                        "exam_type": exam_type,
+                        "exam_date": None,
+                        "course_code": code,
+                        "course_title": title,
+                        "score_raw": str(raw_val).strip(),
+                        "score_numeric": score_num,
+                        "grade": grade,
+                        "grade_points": gp,
+                        "is_absent": is_abs,
+                        "is_arrear": is_arr,
+                        "max_marks": max_m,
+                        "source_sheet": f"{fname}::{sheet}",
+                    }, ("reg_no", "academic_year", "semester", "exam_type", "course_code", "source_sheet"))
                     total_marks_records += 1
 
     conn.commit()
-    print(f"? Student assessments & marks populated: {total_marks_records} records.")
+    print(f"✓ Student assessments & marks populated: {total_marks_records} records.")
 
 
-# ?????????????????????????????????????????????????????????????????????????????
+# ─────────────────────────────────────────────────────────────────────────────
 # 5. Attendance Ingestion
-# ?????????????????????????????????????????????????????????????????????????????
+# ─────────────────────────────────────────────────────────────────────────────
 
 def ingest_attendance(conn: sqlite3.Connection):
     print("\n--- Ingesting Attendance & Exam Eligibility ---")
@@ -719,13 +751,18 @@ def ingest_attendance(conn: sqlite3.Connection):
 
                 status = "ELIGIBLE" if pct >= 75.0 else ("CONDONATION" if pct >= 65.0 else "NOT_ELIGIBLE")
 
-                c.execute("""
-                INSERT INTO attendance (
-                    reg_no, student_name, department, semester,
-                    total_classes_conducted, classes_attended, classes_missed,
-                    attendance_percentage, exam_eligibility_status, tracking_period
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (reg, name, "IT", 5, int(total_hours), int(attended_hours), int(total_hours - attended_hours), pct, status, "16/7/25 to 3/9/25"))
+                upsert_row(conn, "attendance", {
+                    "reg_no": reg,
+                    "student_name": name,
+                    "department": "IT",
+                    "semester": 5,
+                    "total_classes_conducted": int(total_hours),
+                    "classes_attended": int(attended_hours),
+                    "classes_missed": int(total_hours - attended_hours),
+                    "attendance_percentage": pct,
+                    "exam_eligibility_status": status,
+                    "tracking_period": "16/7/25 to 3/9/25",
+                }, ("reg_no", "semester", "tracking_period"))
                 loaded += 1
 
     p_admin = os.path.join(DATA_ROOT, "ADMINISTRATION", "PT_Lee_CNCET_Academic_Data_RAG.xlsx")
@@ -750,14 +787,21 @@ def ingest_attendance(conn: sqlite3.Connection):
 
                 status = str(row.get("Anna University Exam Eligibility") or "ELIGIBLE").strip().upper()
 
-                c.execute("""
-                INSERT INTO attendance (
-                    reg_no, student_name, department, semester,
-                    course_code, course_title, faculty_incharge,
-                    total_classes_conducted, classes_attended, classes_missed,
-                    attendance_percentage, exam_eligibility_status, tracking_period
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, ("INSTITUTIONAL_BATCH", "Class Aggregate", "IT", 4, code, cname, fac, total_c, att_c, miss_c, round(pct, 2), status, "Academic Semester"))
+                upsert_row(conn, "attendance", {
+                    "reg_no": "INSTITUTIONAL_BATCH",
+                    "student_name": "Class Aggregate",
+                    "department": "IT",
+                    "semester": 4,
+                    "course_code": code,
+                    "course_title": cname,
+                    "faculty_incharge": fac,
+                    "total_classes_conducted": total_c,
+                    "classes_attended": att_c,
+                    "classes_missed": miss_c,
+                    "attendance_percentage": round(pct, 2),
+                    "exam_eligibility_status": status,
+                    "tracking_period": "Academic Semester",
+                }, ("reg_no", "semester", "course_code", "tracking_period"))
                 loaded += 1
 
     # Back-fill attendance_percentage for any rows where it was not set during import
@@ -773,13 +817,12 @@ def ingest_attendance(conn: sqlite3.Connection):
     """)
     conn.commit()
     backfilled = conn.execute("SELECT COUNT(*) FROM attendance WHERE attendance_percentage IS NOT NULL").fetchone()[0]
-    backfilled = conn.execute("SELECT COUNT(*) FROM attendance WHERE attendance_percentage IS NOT NULL").fetchone()[0]
-    print(f"? Attendance table populated: {loaded} records (attendance_percentage computed for {backfilled} rows) (attendance_percentage computed for {backfilled} rows).")
+    print(f"✓ Attendance table populated: {loaded} records (attendance_percentage computed for {backfilled} rows).")
 
 
-# ?????????????????????????????????????????????????????????????????????????????
+# ─────────────────────────────────────────────────────────────────────────────
 # 6. Regulations & Institutional Rules Ingestion
-# ?????????????????????????????????????????????????????????????????????????????
+# ─────────────────────────────────────────────────────────────────────────────
 
 def ingest_regulations(conn: sqlite3.Connection):
     print("\n--- Ingesting Academic Regulations & Rules ---")
@@ -844,9 +887,9 @@ def ingest_regulations(conn: sqlite3.Connection):
                     """, (rid, "GPA & CGPA Calculations", f"Calculation Formula Step {i}", line, "", "gpa formula, cgpa calculation, sgpa, credits"))
                     loaded += 1
 
-# ?????????????????????????????????????????????????????????????????????????????
+# ─────────────────────────────────────────────────────────────────────────────
 # 7. Schema Master Ingestion
-# ?????????????????????????????????????????????????????????????????????????????
+# ─────────────────────────────────────────────────────────────────────────────
 
 # Rich, human-readable metadata for every column in every table/view.
 # This is what the LLM reads to understand the database before writing SQL.
@@ -907,18 +950,18 @@ SCHEMA_METADATA = {
         "_type": "table",
         "_description": "Normalized long-format marks table for ALL internal and university exams. Each row = one student + one subject + one exam type.",
         "assessment_id":  ("INTEGER", 1, 0, None, "Auto-increment primary key.", "1, 2, 3"),
-        "reg_no":         ("TEXT", 0, 1, "students(reg_no)", "Student register number (FK -> students). Use to JOIN with students table.", "511523205001"),
+        "reg_no":         ("TEXT", 0, 1, "students(reg_no)", "Student register number (FK → students). Use to JOIN with students table.", "511523205001"),
         "student_name":   ("TEXT", 0, 0, None, "Denormalized student name for faster queries.", "AATHI S"),
         "department":     ("TEXT", 0, 0, None, "Student's department. Values: IT, CSE, AI&DS, MECH.", "IT, CSE, AI&DS"),
         "academic_year":  ("TEXT", 0, 0, None, "Academic year string. Values: 2024-2025, 2025-2026.", "2024-2025, 2025-2026"),
         "semester":       ("INTEGER", 0, 0, None, "Semester number for this exam (2 to 8).", "2, 3, 4, 5, 6"),
         "exam_type":      ("TEXT", 0, 0, None, "Type of exam. Values: IAT-1, IAT-2, MODEL_EXAM, END_SEM_UNIVERSITY.", "IAT-1, IAT-2, MODEL_EXAM, END_SEM_UNIVERSITY"),
         "exam_date":      ("TEXT", 0, 0, None, "Exam date or month. May be NULL for older records.", "2026-02, 2026-03"),
-        "course_code":    ("TEXT", 0, 1, "courses(course_code)", "Subject/course code (FK -> courses). e.g. CS3491, IT3401.", "CS3491, MA3354"),
+        "course_code":    ("TEXT", 0, 1, "courses(course_code)", "Subject/course code (FK → courses). e.g. CS3491, IT3401.", "CS3491, MA3354"),
         "course_title":   ("TEXT", 0, 0, None, "Full subject name stored redundantly for readability.", "Database Management Systems"),
         "score_raw":      ("TEXT", 0, 0, None, "Original raw score as stored in sheet. Can be numeric ('86') or grade ('A+') or 'AB'.", "86, AB, A+, O, U"),
         "score_numeric":  ("REAL", 0, 0, None, "Parsed numeric score (0-100). NULL when score is a letter grade (END_SEM_UNIVERSITY).", "86.0, 54.0, 100.0"),
-        "grade":          ("TEXT", 0, 0, None, "Computed letter grade. Values: O(?90), A+(?80), A(?70), B+(?60), B(?50), C(?45), U(<45), AB(absent).", "O, A+, A, B+, U, AB"),
+        "grade":          ("TEXT", 0, 0, None, "Computed letter grade. Values: O(≥90), A+(≥80), A(≥70), B+(≥60), B(≥50), C(≥45), U(<45), AB(absent).", "O, A+, A, B+, U, AB"),
         "grade_points":   ("INTEGER", 0, 0, None, "Anna University grade points: O=10, A+=9, A=8, B+=7, B=6, C=5, U/AB=0.", "10, 9, 8, 0"),
         "is_absent":      ("INTEGER", 0, 0, None, "Absent flag: 1 = student was absent, 0 = attended.", "0, 1"),
         "is_arrear":      ("INTEGER", 0, 0, None, "Arrear/fail flag: 1 = failed or arrear, 0 = passed.", "0, 1"),
@@ -933,7 +976,7 @@ SCHEMA_METADATA = {
         "student_name":            ("TEXT", 0, 0, None, "Student name (denormalized).", "Aasaimani T"),
         "department":              ("TEXT", 0, 0, None, "Department. Values: IT, CSE, AI&DS.", "IT"),
         "semester":                ("INTEGER", 0, 0, None, "Semester for which attendance is tracked.", "4, 5"),
-        "course_code":             ("TEXT", 0, 1, "courses(course_code)", "Subject code (FK -> courses). NULL for periodic/batch records.", "CS3491"),
+        "course_code":             ("TEXT", 0, 1, "courses(course_code)", "Subject code (FK → courses). NULL for periodic/batch records.", "CS3491"),
         "course_title":            ("TEXT", 0, 0, None, "Subject name.", "Artificial Intelligence"),
         "faculty_incharge":        ("TEXT", 0, 0, None, "Name of faculty conducting the subject.", "Faculty - IT Dept"),
         "total_classes_conducted": ("INTEGER", 0, 0, None, "Total classes/hours held in the period.", "52, 35"),
@@ -1024,22 +1067,19 @@ def ingest_schema_master(conn: sqlite3.Connection):
             total += 1
 
     conn.commit()
-    print(f"? Ultra-compact schema master populated: {total} columns across {len(SCHEMA_METADATA)} objects.")
+    print(f"✓ Ultra-compact schema master populated: {total} columns across {len(SCHEMA_METADATA)} objects.")
 
 
 
-# ?????????????????????????????????????????????????????????????????????????????
+# ─────────────────────────────────────────────────────────────────────────────
 # Main ETL Execution
-# ?????????????????????????????????????????????????????????????????????????????
+# ─────────────────────────────────────────────────────────────────────────────
 
 def main():
     print("=" * 70)
-    print("  P.T. LEE CNCET -- UNIFIED SQLITE DATABASE INGESTION PIPELINE")
+    print("  P.T. LEE CNCET — UNIFIED SQLITE DATABASE INGESTION PIPELINE")
     print(f"  Target DB: {DB_PATH}")
     print("=" * 70)
-
-    if os.path.exists(DB_PATH):
-        os.remove(DB_PATH)
 
     conn = get_connection(DB_PATH)
     init_schema(conn)
@@ -1050,7 +1090,7 @@ def main():
     ingest_assessments(conn)
     ingest_attendance(conn)
     ingest_regulations(conn)
-    ingest_schema_master(conn)   # ? Build the LLM context catalog
+    ingest_schema_master(conn)   # ← Build the LLM context catalog
 
     c = conn.cursor()
     print("\n" + "=" * 70)
@@ -1068,20 +1108,19 @@ def main():
     for tbl in tables:
         c.execute(f"SELECT COUNT(*) FROM {tbl}")
         count = c.fetchone()[0]
-        print(f"  ? {tbl.ljust(25)} : {count:,} rows")
+        print(f"  • {tbl.ljust(25)} : {count:,} rows")
 
     print("\n  Views Verified:")
     for vw in ["view_student_performance_summary", "view_exam_subject_analytics", "view_student_complete_profile"]:
         c.execute(f"SELECT COUNT(*) FROM {vw}")
         vcount = c.fetchone()[0]
-        print(f"  ? {vw.ljust(35)} : {vcount:,} rows")
+        print(f"  • {vw.ljust(35)} : {vcount:,} rows")
 
     conn.close()
     print("=" * 70)
-    print("  ETL PIPELINE COMPLETED SUCCESSFULLY ?")
+    print("  ETL PIPELINE COMPLETED SUCCESSFULLY ✓")
     print("=" * 70)
 
 
 if __name__ == "__main__":
     main()
-

@@ -1,8 +1,0 @@
-
-1. name , dept , year,  register no , batch, father name ,DOB, blood group, hostlear or day scholor , gender 
-2. college results (IATs,model,university results for each student)
-3. co - curricullar activities( certificate earned and achivements by eacch student)
-4. projects done by each student
-5. extra curricullar , sportsand hobiies
-
-

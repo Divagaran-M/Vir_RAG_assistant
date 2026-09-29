@@ -1,16 +1,10 @@
-﻿"""
-ui/api.py -- Backend API Client for the Streamlit UI
+"""
+ui/api.py — Backend API Client for the Streamlit UI
 
 Functions:
-  - upload_pdf(file)                     -> POST /upload
-  - ask_question_stream(...)             -> POST /chat  (streaming generator)
-  - get_suggestions(filename)            -> POST /suggestions
-
-Streaming is done by calling /chat normally but yielding tokens from the
-response so Streamlit's st.write_stream() can render them as they arrive.
-Since our backend isn't SSE-based, we fetch the full response and yield
-the answer word-by-word with a tiny delay to simulate streaming.
-(For true token streaming, the backend would need SSE -- add later.)
+  - upload_pdf(file)                     → POST /upload
+  - ask_question(...)                    → POST /chat
+  - get_suggestions(filename)            → POST /suggestions
 """
 
 import os
@@ -25,7 +19,7 @@ except Exception:
     BASE_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
 
 
-# ?? Upload ?????????????????????????????????????????????????????????????????????
+# ── Upload ─────────────────────────────────────────────────────────────────────
 
 def upload_pdf(uploaded_file):
     files = {
@@ -39,7 +33,7 @@ def upload_pdf(uploaded_file):
     return response
 
 
-# ?? Chat ???????????????????????????????????????????????????????????????????????
+# ── Chat ───────────────────────────────────────────────────────────────────────
 
 def ask_question(
     question: str,
@@ -64,27 +58,45 @@ def ask_question(
         response.raise_for_status()
         return response.json()
     except requests.Timeout:
-        return {"answer": "?? The request timed out. Please try again."}
+        return {"answer": "⚠️ The request timed out. Please try again."}
     except requests.ConnectionError:
-        return {"answer": "?? Could not connect to the backend. Make sure `uvicorn main:app` is running."}
+        return {"answer": "⚠️ Could not connect to the backend. Make sure `uvicorn main:app` is running."}
     except Exception as e:
-        return {"answer": f"?? Error: {e}"}
+        return {"answer": f"⚠️ Error: {e}"}
 
 
+# ── Suggestions ────────────────────────────────────────────────────────────────
 
-# ?? Streaming Chat ?????????????????????????????????????????????????????????????
+def get_suggestions(filename: str):
+    response = requests.post(
+        f"{BASE_URL}/suggestions",
+        json={"filename": filename},
+        timeout=30,
+    )
+    return response
 
-def ask_question_stream(
+
+# -- Streaming Chat ------------------------------------------------------------
+
+def stream_chat(
     question: str,
     filename: str,
     history: list,
     session_id: str = "",
-    metadata_only: bool = False,
 ):
     """
-    Calls /chat and either:
-      - yields tokens word-by-word (for st.write_stream) when metadata_only=False
-      - returns the full parsed JSON dict                  when metadata_only=True
+    Generator that calls POST /chat/stream and yields parsed SSE event dicts.
+
+    Each yielded dict has the shape:
+      {"event": "progress", "message": "Querying SQLite database..."}
+      {"event": "token",    "text":    "Hello"}
+      {"event": "done",     "payload": {"followups": [...], "tools_used": [...], ...}}
+      {"event": "error",    "message": "Something went wrong"}
+
+    Usage in Streamlit:
+        for evt in stream_chat(...):
+            if evt["event"] == "token":
+                yield evt["text"]   # pass to st.write_stream()
     """
     payload = {
         "question": question,
@@ -94,52 +106,44 @@ def ask_question_stream(
     }
 
     try:
-        response = requests.post(
-            f"{BASE_URL}/chat",
+        with requests.post(
+            f"{BASE_URL}/chat/stream",
             json=payload,
+            stream=True,
             timeout=120,
-        )
-        response.raise_for_status()
-        data = response.json()
+        ) as response:
+            response.raise_for_status()
+
+            current_event = "message"
+            for raw_line in response.iter_lines(decode_unicode=True):
+                if not raw_line:
+                    # Blank line -- SSE message boundary, reset event type
+                    current_event = "message"
+                    continue
+
+                if raw_line.startswith("event:"):
+                    current_event = raw_line[len("event:"):].strip()
+                    continue
+
+                if raw_line.startswith("data:"):
+                    data_str = raw_line[len("data:"):].strip()
+                    try:
+                        data = json.loads(data_str)
+                    except json.JSONDecodeError:
+                        continue
+
+                    if current_event == "progress":
+                        yield {"event": "progress", "message": data.get("message", "")}
+                    elif current_event == "token":
+                        yield {"event": "token", "text": data.get("text", "")}
+                    elif current_event == "done":
+                        yield {"event": "done", "payload": data}
+                    elif current_event == "error":
+                        yield {"event": "error", "message": data.get("message", "Unknown error")}
+
     except requests.Timeout:
-        if metadata_only:
-            return {"answer": "?? The request timed out. Please try again."}
-        def _timeout():
-            yield "?? The request timed out. Please try again."
-        return _timeout()
+        yield {"event": "error", "message": "The request timed out. Please try again."}
     except requests.ConnectionError:
-        msg = "?? Could not connect to the backend. Make sure `uvicorn main:app` is running."
-        if metadata_only:
-            return {"answer": msg}
-        def _conn_err():
-            yield msg
-        return _conn_err()
-    except Exception as e:
-        msg = f"?? Error: {e}"
-        if metadata_only:
-            return {"answer": msg}
-        def _err():
-            yield msg
-        return _err()
-
-    if metadata_only:
-        return data
-
-    # Simulate token streaming: yield the answer word-by-word
-    answer = data.get("answer", "")
-    def _stream():
-        for word in answer.split(" "):
-            yield word + " "
-            time.sleep(0.02)
-    return _stream()
-
-
-# ?? Suggestions ????????????????????????????????????????????????????????????????
-
-def get_suggestions(filename: str):
-    response = requests.post(
-        f"{BASE_URL}/suggestions",
-        json={"filename": filename},
-        timeout=30,
-    )
-    return response
+        yield {"event": "error", "message": "Could not connect to the backend. Make sure uvicorn is running."}
+    except Exception as exc:
+        yield {"event": "error", "message": f"Error: {exc}"}

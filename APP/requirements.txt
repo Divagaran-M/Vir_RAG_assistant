@@ -21,3 +21,6 @@ streamlit
 deepface
 opencv-python-headless
 tenacity
+
+# TTS: Microsoft Edge Neural TTS
+edge-tts

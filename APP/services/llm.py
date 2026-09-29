@@ -21,9 +21,26 @@ from config import GROQ_API_KEY, GROQ_MODEL
 
 logger = logging.getLogger(__name__)
 
-logger = logging.getLogger(__name__)
+# Safe client initialization
+_client = None
 
-client = Groq(api_key=GROQ_API_KEY)
+
+def get_client() -> Groq:
+    global _client
+    if _client is None:
+        if not GROQ_API_KEY:
+            raise ValueError(
+                "GROQ_API_KEY is not set. Please set it in your .env file or environment variables."
+            )
+        _client = Groq(api_key=GROQ_API_KEY)
+    return _client
+
+
+# Module-level client instance for backward compatibility
+try:
+    client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+except Exception:
+    client = None
 
 _GROQ_RETRYABLE = (RateLimitError, APIConnectionError, APITimeoutError)
 
@@ -49,31 +66,8 @@ def generate_response(prompt: str) -> str:
     Retries up to 4 times on rate-limit or server errors with exponential backoff.
     """
     try:
-_GROQ_RETRYABLE = (RateLimitError, APIConnectionError, APITimeoutError)
-
-
-def _is_groq_retryable(exc: BaseException) -> bool:
-    if isinstance(exc, _GROQ_RETRYABLE):
-        return True
-    if isinstance(exc, APIStatusError):
-        return exc.status_code in (500, 502, 503, 504)
-    return False
-
-
-@retry(
-    retry=retry_if_exception(_is_groq_retryable),
-    stop=stop_after_attempt(4),
-    wait=wait_exponential(multiplier=1, min=2, max=20),
-    before_sleep=before_sleep_log(logger, logging.WARNING),
-    reraise=True,
-)
-def generate_response(prompt: str) -> str:
-    """
-    Generate a response from Groq LLM.
-    Retries up to 4 times on rate-limit or server errors with exponential backoff.
-    """
-    try:
-        completion = client.chat.completions.create(
+        groq_client = get_client()
+        completion = groq_client.chat.completions.create(
             model=GROQ_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
